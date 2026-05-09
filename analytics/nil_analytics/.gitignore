@@ -1,0 +1,16 @@
+# DuckDB database files (binary, large — do not commit)
+db/*.db
+db/*.db.wal
+
+# Raw and processed data (large files, pulled via scripts)
+data/raw/
+data/processed/
+
+# R session artifacts
+.Rhistory
+.RData
+.Rproj.user/
+
+# Output artifacts (generated, not source)
+outputs/figures/
+outputs/memo/
