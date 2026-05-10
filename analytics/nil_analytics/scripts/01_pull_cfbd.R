@@ -64,7 +64,9 @@ cat("Packages loaded.\n\n")
 # -----------------------------------------------------------------------------
 api_key <- Sys.getenv("CFBD_API_KEY")
 if (nchar(api_key) == 0) stop("CFBD_API_KEY env var not set. Aborting.")
-cfbd_key(api_key)
+# cfbd_key() signature varies by version — set env var directly, which
+# cfbfastR reads internally via Sys.getenv("CFBD_API_KEY")
+Sys.setenv(CFBD_API_KEY = api_key)
 cat("API key set.\n\n")
 
 # -----------------------------------------------------------------------------
