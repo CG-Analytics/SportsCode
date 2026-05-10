@@ -72,7 +72,7 @@ cat("API key set.\n\n")
 # -----------------------------------------------------------------------------
 # 2. Paths and constants
 # -----------------------------------------------------------------------------
-SEASONS   <- 2021:2023
+SEASONS   <- 2021:2025
 RAW_DIR   <- "data/raw/cfbd"
 PROC_DIR  <- "data/processed"
 DB_PATH   <- "db/nil_analytics.db"
@@ -482,14 +482,21 @@ for (yr in SEASONS) {
 
   cat("  Loading PBP", yr, "into DuckDB plays table...\n")
 
+  # cfbfastR PBP confirmed column names (from inspection of pbp_2021.rds):
+  #   game_id   = cfbfastR's CFBD game ID (rename before join)
+  #   pos_team  = offensive team name (NOT 'offense')
+  #   def_pos_team = defensive team name (NOT 'defense')
+  #   id_play   = play identifier (NOT 'id')
+  #   wk        = week number (NOT 'week')
+  #   epa, wpa, play_type, down, distance, yards_gained, etc. all confirmed present
+  #   No 'garbage_time' column in cfbfastR output
   plays_raw <- pbp_season %>%
-    # Rename CFBD's game_id to avoid collision with our internal game_id after join
     rename(cfbd_game_id_pbp = game_id) %>%
     left_join(game_id_map, by = c("cfbd_game_id_pbp" = "cfbd_game_id")) %>%
-    # game_id is now unambiguously the internal DB ID from game_id_map
-    left_join(alias_lookup, by = c("offense" = "alias_name")) %>%
+    # game_id now = our internal DB ID
+    left_join(alias_lookup, by = c("pos_team" = "alias_name")) %>%
     rename(offense_team_id = team_id) %>%
-    left_join(alias_lookup, by = c("defense" = "alias_name")) %>%
+    left_join(alias_lookup, by = c("def_pos_team" = "alias_name")) %>%
     rename(defense_team_id = team_id) %>%
     filter(!is.na(game_id), !is.na(offense_team_id), !is.na(defense_team_id))
 
@@ -501,13 +508,14 @@ for (yr in SEASONS) {
   plays_clean <- plays_raw %>%
     transmute(
       cfbd_play_id    = as.integer({
-        # cfbfastR may return play_id, id, or play_id — check all possibilities
-        play_id_col <- intersect(c("play_id", "id"), names(.))
+        # cfbfastR confirmed name: id_play. Fallbacks for safety.
+        play_id_col <- intersect(c("id_play", "play_id", "id"), names(.))
         if (length(play_id_col) > 0) .data[[play_id_col[1]]] else NA_integer_
       }),
       game_id         = as.integer(game_id),
       season          = as.integer(season),
-      week            = as.integer(if ("week" %in% names(.)) week else NA_integer_),
+      week            = as.integer(if ("wk" %in% names(.)) wk else
+                                   if ("week" %in% names(.)) week else NA_integer_),
       offense_team_id = as.integer(offense_team_id),
       defense_team_id = as.integer(defense_team_id),
       play_number     = as.integer(if ("play_number"    %in% names(.)) play_number    else NA_integer_),
@@ -571,52 +579,64 @@ gts_query <- "
     p.game_id,
     p.season,
     p.offense_team_id                                              AS team_id,
-    -- Rushing
-    COUNT(*)    FILTER (WHERE p.play_type = 'Rush')               AS rush_plays,
-    SUM(p.epa)  FILTER (WHERE p.play_type = 'Rush')               AS rush_epa_total,
-    AVG(p.epa)  FILTER (WHERE p.play_type = 'Rush')               AS rush_epa_per_play,
-    AVG(CASE WHEN p.play_type = 'Rush' AND p.success THEN 1.0
-             ELSE 0.0 END)                                         AS rush_success_rate,
-    SUM(p.yards_gained) FILTER (WHERE p.play_type = 'Rush')       AS rush_yards,
-    AVG(p.yards_gained) FILTER (WHERE p.play_type = 'Rush')       AS rush_yards_per_carry,
-    -- Passing (reception + incompletion + interception + sack)
+    -- Rushing: 'Rush' + 'Rushing Touchdown' (confirmed cfbfastR play_type values)
+    COUNT(*)    FILTER (WHERE p.play_type IN ('Rush','Rushing Touchdown'))
+                                                                   AS rush_plays,
+    SUM(p.epa)  FILTER (WHERE p.play_type IN ('Rush','Rushing Touchdown'))
+                                                                   AS rush_epa_total,
+    AVG(p.epa)  FILTER (WHERE p.play_type IN ('Rush','Rushing Touchdown'))
+                                                                   AS rush_epa_per_play,
+    AVG(CASE WHEN p.play_type IN ('Rush','Rushing Touchdown')
+             AND p.success THEN 1.0 ELSE 0.0 END)                 AS rush_success_rate,
+    SUM(p.yards_gained) FILTER (WHERE p.play_type IN ('Rush','Rushing Touchdown'))
+                                                                   AS rush_yards,
+    AVG(p.yards_gained) FILTER (WHERE p.play_type IN ('Rush','Rushing Touchdown'))
+                                                                   AS rush_yards_per_carry,
+    -- Passing: all pass-play types (confirmed cfbfastR values)
     COUNT(*)    FILTER (WHERE p.play_type IN (
-                  'Pass Reception','Pass Incompletion',
-                  'Pass Interception Return','Sack'))               AS pass_plays,
+                  'Pass Reception','Pass Incompletion','Sack',
+                  'Passing Touchdown','Interception Return',
+                  'Interception Return Touchdown'))                 AS pass_plays,
     SUM(p.epa)  FILTER (WHERE p.play_type IN (
-                  'Pass Reception','Pass Incompletion',
-                  'Pass Interception Return','Sack'))               AS pass_epa_total,
+                  'Pass Reception','Pass Incompletion','Sack',
+                  'Passing Touchdown','Interception Return',
+                  'Interception Return Touchdown'))                 AS pass_epa_total,
     AVG(p.epa)  FILTER (WHERE p.play_type IN (
-                  'Pass Reception','Pass Incompletion',
-                  'Pass Interception Return','Sack'))               AS pass_epa_per_play,
+                  'Pass Reception','Pass Incompletion','Sack',
+                  'Passing Touchdown','Interception Return',
+                  'Interception Return Touchdown'))                 AS pass_epa_per_play,
     AVG(CASE WHEN p.play_type IN (
-                  'Pass Reception','Pass Incompletion',
-                  'Pass Interception Return','Sack')
-                  AND p.success THEN 1.0 ELSE 0.0 END)             AS pass_success_rate,
+                  'Pass Reception','Pass Incompletion','Sack',
+                  'Passing Touchdown','Interception Return',
+                  'Interception Return Touchdown')
+             AND p.success THEN 1.0 ELSE 0.0 END)                 AS pass_success_rate,
     SUM(p.yards_gained) FILTER (WHERE p.play_type IN (
-                  'Pass Reception','Pass Incompletion',
-                  'Pass Interception Return','Sack'))               AS pass_yards,
-    -- Overall
+                  'Pass Reception','Pass Incompletion','Sack',
+                  'Passing Touchdown','Interception Return',
+                  'Interception Return Touchdown'))                 AS pass_yards,
+    -- Overall (all plays with valid EPA)
     AVG(p.epa)                                                     AS total_epa,
     AVG(p.epa)  FILTER (WHERE p.success = TRUE)                    AS explosiveness
   FROM plays p
-  -- Only FBS-vs-FBS: both teams must exist in sp_ratings for at least one season
+  -- Only FBS-vs-FBS: both teams must have SP+ ratings
   JOIN sp_ratings sp_off ON sp_off.team_id = p.offense_team_id AND sp_off.season = p.season
   JOIN sp_ratings sp_def ON sp_def.team_id = p.defense_team_id AND sp_def.season = p.season
   WHERE
-    -- Parentheses required: OR has lower precedence than AND
-    (p.garbage_time = FALSE OR p.garbage_time IS NULL)
-    AND p.epa IS NOT NULL
+    -- garbage_time not provided by cfbfastR; include all plays (analyst can filter later)
+    p.epa IS NOT NULL
     AND p.play_type IN (
-      'Rush','Pass Reception','Pass Incompletion',
-      'Pass Interception Return','Sack'
+      'Rush','Rushing Touchdown',
+      'Pass Reception','Pass Incompletion','Sack',
+      'Passing Touchdown','Interception Return',
+      'Interception Return Touchdown'
     )
   GROUP BY p.game_id, p.season, p.offense_team_id
   HAVING
-    COUNT(*) FILTER (WHERE p.play_type = 'Rush') >= 5
+    COUNT(*) FILTER (WHERE p.play_type IN ('Rush','Rushing Touchdown')) >= 5
     AND COUNT(*) FILTER (WHERE p.play_type IN (
-      'Pass Reception','Pass Incompletion',
-      'Pass Interception Return','Sack')) >= 5
+      'Pass Reception','Pass Incompletion','Sack',
+      'Passing Touchdown','Interception Return',
+      'Interception Return Touchdown')) >= 5
 "
 
 gts_raw <- dbGetQuery(con, gts_query)
