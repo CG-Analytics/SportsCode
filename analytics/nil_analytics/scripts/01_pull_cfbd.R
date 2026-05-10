@@ -384,16 +384,30 @@ cat("\n")
 cat("--- D. Supplementary Game Metrics ---\n")
 
 game_stats_all <- load_or_pull("game_stats_all", function() {
+  # cfbd_game_team_stats() requires a team filter — calling without one returns HTTP 400.
+  # Loop through all FBS teams (~130 teams × 5 seasons ≈ 650 calls; well under rate limit).
+  # Each game appears twice per season-team-pair so we deduplicate at the end.
+  fbs_teams <- teams_raw %>%
+    filter(tolower(classification) == "fbs") %>%
+    pull(school)
+  cat("    Looping through", length(fbs_teams), "FBS teams\n")
+
   map_dfr(SEASONS, function(yr) {
     cat("    cfbd_game_team_stats:", yr, "\n")
-    tryCatch(
-      flatten_api(cfbd_game_team_stats(year = yr)) %>% mutate(season = yr),
-      error = function(e) {
-        cat("    WARNING: game_team_stats failed for", yr, "-", conditionMessage(e), "\n")
-        tibble()
-      }
-    )
-  })
+    rows_yr <- map_dfr(fbs_teams, function(tm) {
+      Sys.sleep(0.3)
+      tryCatch(
+        flatten_api(cfbd_game_team_stats(year = yr, team = tm)) %>% mutate(season = yr),
+        error = function(e) {
+          cat("    WARNING: game_team_stats failed for", tm, yr, "-", conditionMessage(e), "\n")
+          tibble()
+        }
+      )
+    })
+    cat("      Season", yr, "raw rows:", nrow(rows_yr), "\n")
+    rows_yr
+  }) %>%
+    distinct()  # deduplicate — each game collected once per home team, once per away team
 })
 cat("  game_team_stats rows:", nrow(game_stats_all), "\n")
 
@@ -512,8 +526,12 @@ for (yr in SEASONS) {
 
   plays_clean <- plays_raw %>%
     transmute(
-      cfbd_play_id    = as.integer(
-        if (!is.na(play_id_col)) .data[[play_id_col]] else NA_integer_
+      # BIGINT in DuckDB — use as.numeric() (double) to avoid integer overflow.
+      # CFBD play IDs are large integers (e.g. 401520151001) that exceed R's
+      # .Machine$integer.max (~2.1B). as.integer() silently returns NA for these,
+      # causing the filter(!is.na(cfbd_play_id)) below to drop ~97% of rows.
+      cfbd_play_id    = as.numeric(
+        if (!is.na(play_id_col)) .data[[play_id_col]] else NA_real_
       ),
       game_id         = as.integer(game_id),
       season          = as.integer(season),
