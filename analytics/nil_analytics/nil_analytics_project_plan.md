@@ -489,6 +489,46 @@ Date: [date]
 
 ---
 
+## 7B. Updated Implementation Notes (as of 2026-05-10)
+
+The original plan above reflects the initial design. Actual implementation has
+diverged in a few areas — see `PROGRESS.md` for full detail. Key updates:
+
+**Seasons extended:** 2021→2023 expanded to **2021→2025** (5 seasons, ~700K plays).
+
+**DuckDB added:** All data lives in a normalized DuckDB database (`db/nil_analytics.db`)
+rather than flat RDS files. The `v_model_ready` view produces the regression-ready
+dataframe directly from SQL — scripts 03 (merge) may be simplified or eliminated.
+
+**Script 01 status:** Built, debugged, and pushed. Run it fresh after terminal restart.
+The PBP pull for 2022–2025 and game_team_stats team loop will run for ~45–60 minutes.
+
+**cfbfastR column names (confirmed actual):**
+- `pos_team` = offense team name (not `offense`)
+- `def_pos_team` = defense team name (not `defense`)
+- `id_play` = play identifier (not `id`)
+- `wk` = week number (not `week`)
+- `play_type` values: `'Rush'`, `'Rushing Touchdown'`, `'Pass Reception'`,
+  `'Pass Incompletion'`, `'Sack'`, `'Passing Touchdown'`, `'Interception Return'`,
+  `'Interception Return Touchdown'`
+
+**Immediate next steps (in order):**
+
+1. **Run `01_pull_cfbd.R`** after terminal restart — fills `plays`, `games`,
+   `sp_ratings`, `game_team_stats` for 2021–2025.
+2. **Export PFF CSVs manually** — this is the only human-required step. Export
+   OL, DL, LB, RB, QB grades for 2021–2025 from PFF into `data/raw/pff/`.
+   File naming: `pff_ol_2021.csv`, `pff_dl_2021.csv`, etc.
+   LB grades should include run_stop_grade, pass_rush_grade, coverage_grade.
+3. **Run `02_process_pff.R`** (to be written) — loads PFF CSVs, computes
+   snap-weighted grades, inserts into `player_season_grades` table.
+4. **EDA** via `04_eda.R` — correlation matrix, distributions, G5 vs P4 check.
+5. **Modeling** — `v_model_ready` view is the entry point. Filter to
+   `rush_plays >= 10 AND pass_plays >= 10 AND sp_rating IS NOT NULL`.
+6. **Visualizations + memo** — final outputs to `outputs/figures/` and `outputs/memo/`.
+
+---
+
 ## 8. Key Decisions & Constraints Already Made
 
 | Decision | Choice | Rationale |
