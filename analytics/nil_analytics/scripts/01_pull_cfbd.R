@@ -14,13 +14,23 @@ cat("Started:", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n\n")
 
 # -----------------------------------------------------------------------------
 # 0. Package installation and loading
+# NOTE: cfbfastR is NOT on CRAN — must install from sportsdataverse r-universe.
+#       All other packages install from CRAN normally.
 # -----------------------------------------------------------------------------
-required_packages <- c(
-  "cfbfastR", "tidyverse", "duckdb", "DBI", "digest",
-  "lubridate", "janitor"
-)
 
-for (pkg in required_packages) {
+# cfbfastR requires the sportsdataverse r-universe repo
+if (!requireNamespace("cfbfastR", quietly = TRUE)) {
+  cat("Installing: cfbfastR (from sportsdataverse r-universe)\n")
+  install.packages(
+    "cfbfastR",
+    repos = c("https://sportsdataverse.r-universe.dev", "https://cloud.r-project.org"),
+    quiet = TRUE
+  )
+}
+
+# Remaining packages from CRAN
+cran_packages <- c("tidyverse", "duckdb", "DBI", "digest", "lubridate", "janitor")
+for (pkg in cran_packages) {
   if (!requireNamespace(pkg, quietly = TRUE)) {
     cat("Installing:", pkg, "\n")
     install.packages(pkg, repos = "https://cloud.r-project.org", quiet = TRUE)
