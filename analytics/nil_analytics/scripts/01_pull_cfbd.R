@@ -234,9 +234,13 @@ cat("A4. Conference memberships\n")
 conf_db <- dbGetQuery(con, "SELECT conference_id, name FROM conferences")
 
 memberships_raw <- teams_raw %>%
+  # Select only school + conference to avoid collision: cfbd_team_info() returns
+  # its own 'team_id' (CFBD's ID), which would conflict with our DB team_id
+  # after the left_join below, producing team_id.x / team_id.y ambiguity.
+  select(school, conference) %>%
   filter(!is.na(school), !is.na(conference)) %>%
-  left_join(team_lookup, by = "school") %>%
-  left_join(conf_db, by = c("conference" = "name")) %>%
+  left_join(team_lookup, by = "school") %>%      # adds our DB team_id
+  left_join(conf_db, by = c("conference" = "name")) %>%  # adds conference_id
   filter(!is.na(team_id), !is.na(conference_id)) %>%
   transmute(
     team_id       = as.integer(team_id),
