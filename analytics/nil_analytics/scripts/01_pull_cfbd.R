@@ -282,17 +282,20 @@ games_all <- load_or_pull("games_all", function() {
   })
 })
 
-# cfbd_game_info() → after flatten_api:
-# id, season, week, season_type, start_date, neutral_site, conference_game,
+# cfbd_game_info() → after flatten_api (confirmed column names):
+# game_id, season, week, season_type, start_date, neutral_site, conference_game,
 # attendance, venue, home_team, home_points, away_team, away_points, ...
 games_clean <- games_all %>%
+  # Rename cfbfastR's game_id → cfbd_game_id_raw to avoid collision with our
+  # internal DB game_id that we assign later
+  rename(cfbd_game_id_raw = game_id) %>%
   left_join(alias_lookup, by = c("home_team" = "alias_name")) %>%
   rename(home_team_id = team_id) %>%
   left_join(alias_lookup, by = c("away_team" = "alias_name")) %>%
   rename(away_team_id = team_id) %>%
   filter(!is.na(home_team_id), !is.na(away_team_id)) %>%
   transmute(
-    cfbd_game_id    = as.integer(id),
+    cfbd_game_id    = as.integer(cfbd_game_id_raw),
     season          = as.integer(season),
     week            = as.integer(week),
     game_type       = as.character(game_type),
@@ -497,7 +500,11 @@ for (yr in SEASONS) {
 
   plays_clean <- plays_raw %>%
     transmute(
-      cfbd_play_id    = as.integer(if ("id" %in% names(.)) id else NA_integer_),
+      cfbd_play_id    = as.integer({
+        # cfbfastR may return play_id, id, or play_id — check all possibilities
+        play_id_col <- intersect(c("play_id", "id"), names(.))
+        if (length(play_id_col) > 0) .data[[play_id_col[1]]] else NA_integer_
+      }),
       game_id         = as.integer(game_id),
       season          = as.integer(season),
       week            = as.integer(if ("week" %in% names(.)) week else NA_integer_),
