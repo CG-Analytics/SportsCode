@@ -28,8 +28,13 @@ if (!requireNamespace("cfbfastR", quietly = TRUE)) {
   )
 }
 
-# Remaining packages from CRAN
-cran_packages <- c("tidyverse", "duckdb", "DBI", "digest", "lubridate", "janitor")
+# Individual tidyverse components only — avoids tidyverse meta-package which
+# pulls in ragg/textshaping (require harfbuzz/fribidi system libs not present).
+# ggplot2 and graphics packages are NOT needed for this data pull script.
+cran_packages <- c(
+  "dplyr", "purrr", "tidyr", "stringr", "magrittr", "tibble", "rlang",
+  "duckdb", "DBI", "digest", "lubridate", "janitor"
+)
 for (pkg in cran_packages) {
   if (!requireNamespace(pkg, quietly = TRUE)) {
     cat("Installing:", pkg, "\n")
@@ -39,7 +44,12 @@ for (pkg in cran_packages) {
 
 suppressPackageStartupMessages({
   library(cfbfastR)
-  library(tidyverse)
+  library(dplyr)
+  library(purrr)
+  library(tidyr)
+  library(stringr)
+  library(magrittr)
+  library(tibble)
   library(duckdb)
   library(DBI)
   library(digest)
