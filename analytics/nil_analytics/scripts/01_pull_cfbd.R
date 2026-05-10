@@ -477,6 +477,11 @@ for (yr in SEASONS) {
   wpa_col <- intersect(c("wpa", "wp_added", "win_prob_added"), pbp_cols)[1]
   if (is.na(wpa_col)) wpa_col <- NA_character_
 
+  # Play ID column detection — must be outside transmute (transmute runs per-row)
+  play_id_col_candidates <- intersect(c("id_play", "play_id", "id"), pbp_cols)
+  play_id_col <- if (length(play_id_col_candidates) > 0) play_id_col_candidates[1] else NA_character_
+  cat("  Play ID column:", ifelse(is.na(play_id_col), "NOT FOUND", play_id_col), "\n")
+
   # Clock column detection — may be clock_minutes/clock_seconds or just clock
   has_split_clock <- all(c("clock_minutes", "clock_seconds") %in% pbp_cols)
 
@@ -507,11 +512,9 @@ for (yr in SEASONS) {
 
   plays_clean <- plays_raw %>%
     transmute(
-      cfbd_play_id    = as.integer({
-        # cfbfastR confirmed name: id_play. Fallbacks for safety.
-        play_id_col <- intersect(c("id_play", "play_id", "id"), names(.))
-        if (length(play_id_col) > 0) .data[[play_id_col[1]]] else NA_integer_
-      }),
+      cfbd_play_id    = as.integer(
+        if (!is.na(play_id_col)) .data[[play_id_col]] else NA_integer_
+      ),
       game_id         = as.integer(game_id),
       season          = as.integer(season),
       week            = as.integer(if ("wk" %in% names(.)) wk else
